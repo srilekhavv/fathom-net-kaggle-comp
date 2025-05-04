@@ -1,4 +1,0 @@
-httpx
-pillow
-coco-lib
-tqdm
