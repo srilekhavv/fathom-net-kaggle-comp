@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 class MarineClassifier(nn.Module):
-    def __init__(self, num_classes, fine_tune_layers=None):
+    def __init__(self, fine_tune_layers=None):
         """Initialize BioCLIP-based classifier.
 
         Args:
@@ -33,7 +33,7 @@ class MarineClassifier(nn.Module):
                     param.requires_grad = True
 
         # Classification head
-        self.fc = nn.Linear(self.clip_model.visual.output_dim, num_classes)
+        self.fc = nn.Linear(self.clip_model.visual.output_dim, 79)
 
     def forward(self, images):
         """Forward pass through BioCLIP & classifier head."""
