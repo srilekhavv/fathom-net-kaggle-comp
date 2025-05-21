@@ -8,14 +8,35 @@ from google.cloud import storage
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
+# ------------------------------
+# 1. Google Cloud Authentication
+# ------------------------------
+
+
+def authenticate_gcs(service_account_json=None):
+    """Authenticate with Google Cloud using a service account key."""
+    if service_account_json:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_json
+    try:
+        storage_client = storage.Client()
+        _ = storage_client.list_buckets()
+        print("Google Cloud Authentication Successful!")
+    except Exception as e:
+        print("Google Cloud Authentication Failed:", e)
+        print("Please provide a valid service account key.")
+
+
+# Call authentication once when utils is imported
+SERVICE_ACCOUNT_PATH = "fathom-net-kaggle-9a123ad1b993.json"  # Update with correct path
+authenticate_gcs(SERVICE_ACCOUNT_PATH)
 
 # ------------------------------
-# 1. Google Cloud Storage Helpers
+# 2. Google Cloud Storage Helpers
 # ------------------------------
 
 
 def get_gcs_client():
-    """Initialize and return a Google Cloud Storage client."""
+    """Returns an authenticated Google Cloud Storage client."""
     return storage.Client()
 
 
@@ -38,7 +59,7 @@ def load_gcs_image(bucket_name: str, file_path: str) -> Image.Image:
 
 
 # ------------------------------
-# 2. Data Processing & Encoding
+# 3. Data Processing & Encoding
 # ------------------------------
 
 
@@ -53,7 +74,7 @@ def encode_label(label: str, label_mapping: dict) -> torch.Tensor:
 
 
 # ------------------------------
-# 3. Dataset Class for GCS
+# 4. Dataset Class for GCS
 # ------------------------------
 
 
@@ -86,7 +107,7 @@ class GCSMarineDataset(Dataset):
 
 
 # ------------------------------
-# 4. Dataloader Function
+# 5. Dataloader Function
 # ------------------------------
 
 
@@ -103,7 +124,7 @@ def load_data(
 
 
 # ------------------------------
-# 5. Evaluation Metrics
+# 6. Evaluation Metrics
 # ------------------------------
 
 
