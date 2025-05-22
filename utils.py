@@ -64,8 +64,13 @@ def load_gcs_image(bucket_name: str, file_path: str) -> Image.Image:
 
 
 def create_label_mapping(annotations: pd.DataFrame) -> dict:
-    """Generate a mapping from class labels to numerical indices."""
-    return {name: idx for idx, name in enumerate(annotations["label"].unique())}
+    """Ensure labels are mapped to unique indices."""
+    unique_labels = annotations["label"].dropna().unique()  # ✅ Remove NaNs
+    label_mapping = {
+        label: idx for idx, label in enumerate(sorted(unique_labels))
+    }  # ✅ Ensure consistent ordering
+    print("Label Mapping:", label_mapping)  # ✅ Debug: Print label mapping
+    return label_mapping
 
 
 def encode_label(label: str, label_mapping: dict) -> torch.Tensor:
@@ -137,21 +142,72 @@ class GCSMarineDataset(Dataset):
         return image, label
 
 
+class LocalMarineDataset(Dataset):
+    def __init__(
+        self, base_path: str, annotations_filename: str, use_roi=False, transform=None
+    ):
+        """
+        Args:
+            base_path (str): Local dataset directory (e.g., '/content/dataset/train').
+            annotations_filename (str): CSV file with image paths and labels.
+            use_roi (bool): If True, load images from 'roi/' instead of 'images/'.
+            transform (torchvision.transforms): Image preprocessing transforms.
+        """
+        self.base_path = base_path
+        self.use_roi = use_roi
+        self.annotations = pd.read_csv(os.path.join(base_path, annotations_filename))
+        self.transform = (
+            transform
+            if transform
+            else transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),  # ✅ Ensure uniform image size
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ]
+            )
+        )
+        self.label_mapping = create_label_mapping(self.annotations)
+
+    def __len__(self):
+        return len(self.annotations)
+
+    def __getitem__(self, idx):
+        row = self.annotations.iloc[idx]
+
+        # Skip rows with missing labels
+        if pd.isna(row["label"]) or row["label"] not in self.label_mapping:
+            print(
+                f"Warning: Missing or unrecognized label '{row['label']}' at index {idx}, skipping."
+            )
+            return None  # ✅ Skip bad samples
+
+        # Load image
+        folder = "rois" if self.use_roi else "images"
+        filename = os.path.basename(row["path"])
+        image_path = os.path.join(self.base_path, folder, filename)
+        image = Image.open(image_path).convert("RGB")
+        image = self.transform(image)
+
+        # Encode label using mapped indices
+        label = torch.tensor(self.label_mapping[row["label"]], dtype=torch.long)
+        return image, label
+
+
 # ------------------------------
 # 5. Dataloader Function
 # ------------------------------
 
 
 def load_data(
-    bucket_name: str,
-    data_folder: str,
+    base_path: str,
     annotations_filename: str,
     batch_size: int = 128,
     shuffle: bool = False,
     use_roi: bool = True,
 ) -> DataLoader:
     """Create a DataLoader for training with GCS-stored images."""
-    dataset = GCSMarineDataset(bucket_name, data_folder, annotations_filename, use_roi)
+    dataset = LocalMarineDataset(base_path, annotations_filename, use_roi)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
 
 

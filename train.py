@@ -9,6 +9,7 @@ import torch.utils.tensorboard as tb
 
 from models import load_model, save_model
 from utils import load_data, compute_accuracy
+from torch.utils.data import random_split
 
 
 def train(
@@ -18,10 +19,10 @@ def train(
     lr: float = 1e-3,
     batch_size: int = 128,
     seed: int = 2024,
-    bucket_name: str = "your-gcs-bucket",
+    dataset_path: str = "/content/fathom-net-kaggle-comp/dataset/",
     **kwargs,
 ):
-    """Train the model using data stored in Google Cloud Storage (GCS)."""
+    """Train the model using a structured Train/Validation/Test split."""
 
     # Select device (GPU or CPU)
     if torch.cuda.is_available():
@@ -44,22 +45,26 @@ def train(
     model = load_model(model_name, **kwargs).to(device)
     model.train()
 
-    # Load training and validation data **from GCS**
-    train_data = load_data(
-        bucket_name,
-        "dataset/train",
+    # Load full training dataset
+    full_train_dataset = load_data(
+        os.path.join(dataset_path, "train"),
         "annotations.csv",
         batch_size=batch_size,
-        shuffle=True,
         use_roi=True,
     )
-    val_data = load_data(
-        bucket_name,
-        "dataset/test",
-        "annotations.csv",
-        batch_size=batch_size,
-        shuffle=False,
-        use_roi=True,
+
+    # **Split full train set into train & validation (80/20)**
+    train_size = int(0.8 * len(full_train_dataset.dataset))
+    val_size = len(full_train_dataset.dataset) - train_size
+    train_dataset, val_dataset = random_split(
+        full_train_dataset.dataset, [train_size, val_size]
+    )
+
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True
+    )
+    val_dataloader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False
     )
 
     # Loss function & optimizer
@@ -69,13 +74,14 @@ def train(
     global_step = 0
     metrics = {"train_acc": [], "val_acc": []}
 
+    print("Starting training loop")
     # Training loop
     for epoch in range(num_epoch):
         for key in metrics:
             metrics[key].clear()  # Clear metrics at start of each epoch
 
         model.train()
-        for img, label in train_data:
+        for img, label in train_dataloader:
             img, label = img.to(device), label.to(device)
 
             # Forward pass
@@ -98,7 +104,7 @@ def train(
         # Evaluate model on validation set
         with torch.inference_mode():
             model.eval()
-            for img, label in val_data:
+            for img, label in val_dataloader:
                 img, label = img.to(device), label.to(device)
 
                 # Compute validation accuracy
@@ -116,10 +122,9 @@ def train(
         logger.add_scalar("val_acc", epoch_val_acc.item(), global_step)
 
         # Print progress
-        if epoch == 0 or epoch == num_epoch - 1 or (epoch + 1) % 10 == 0:
-            print(
-                f"Epoch {epoch + 1}/{num_epoch}: train_acc={epoch_train_acc:.4f}, val_acc={epoch_val_acc:.4f}"
-            )
+        print(
+            f"Epoch {epoch + 1}/{num_epoch}: train_acc={epoch_train_acc:.4f}, val_acc={epoch_val_acc:.4f}"
+        )
 
     # Save model checkpoints
     save_model(model)
@@ -136,8 +141,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument(
-        "--bucket_name", type=str, required=True
-    )  # Required GCS bucket name
+        "--dataset_path", type=str, default="/content/fathom-net-kaggle-comp/dataset/"
+    )
 
     # Parse arguments and run training
     train(**vars(parser.parse_args()))
