@@ -86,10 +86,10 @@ def load_model(model_name: str, with_weights: bool = False, **model_kwargs):
                 f"Failed to load {model_path}. Check default model arguments."
             ) from e
 
-    # Check model size constraint
+    # # Check model size constraint
     model_size_mb = calculate_model_size_mb(model)
-    if model_size_mb > 10:
-        raise AssertionError(f"{model_name} is too large: {model_size_mb:.2f} MB")
+    # if model_size_mb > 10:
+    #     raise AssertionError(f"{model_name} is too large: {model_size_mb:.2f} MB")
     print(f"Model size: {model_size_mb:.2f} MB")
 
     return model

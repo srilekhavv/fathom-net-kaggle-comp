@@ -101,7 +101,18 @@ class GCSMarineDataset(Dataset):
         self.annotations = load_gcs_csv(
             bucket_name, f"{data_folder}/{annotations_filename}"
         )
-        self.transform = transform if transform else transforms.ToTensor()
+        self.transform = (
+            transform
+            if transform
+            else transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),  # ✅ Ensure uniform image size
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                ]
+            )
+        )
+
         self.label_mapping = {
             name: idx for idx, name in enumerate(self.annotations["label"].unique())
         }
@@ -111,11 +122,11 @@ class GCSMarineDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
-
+        filename = os.path.basename(row["path"])
         # Select correct folder (ROI or Images)
-        folder = "roi" if self.use_roi else "images"
-        image_path = f"{self.data_folder}/{folder}/{row['path']}"
-        print(image_path)
+        folder = "rois" if self.use_roi else "images"
+        image_path = f"{self.data_folder}/{folder}/{filename}"
+        # print("image_path",image_path)
 
         # Load image from GCS
         image = load_gcs_image(self.bucket_name, image_path)

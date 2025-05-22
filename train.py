@@ -51,6 +51,7 @@ def train(
         "annotations.csv",
         batch_size=batch_size,
         shuffle=True,
+        use_roi=True,
     )
     val_data = load_data(
         bucket_name,
@@ -58,6 +59,7 @@ def train(
         "annotations.csv",
         batch_size=batch_size,
         shuffle=False,
+        use_roi=True,
     )
 
     # Loss function & optimizer
