@@ -10,30 +10,41 @@ from pathlib import Path
 
 
 class MarineClassifier(nn.Module):
-    def __init__(self, fine_tune_layers=None):
-        """Initialize BioCLIP-based classifier.
-
+    def __init__(self, unfreeze_top_x=None):
+        """
         Args:
-            num_classes (int): Number of output classes.
-            fine_tune_layers (list, optional): Layers to unfreeze for fine-tuning.
+            fine_tune_layers (list, optional): List of specific layers to unfreeze.
+            unfreeze_top_x (int, optional): Number of top layers to unfreeze automatically.
         """
         super(MarineClassifier, self).__init__()
         self.clip_model, _, _ = open_clip.create_model_and_transforms(
             "hf-hub:imageomics/bioclip"
         )
 
-        # Freeze BioCLIP layers initially
+        # Freeze all layers by default
         for param in self.clip_model.parameters():
             param.requires_grad = False
 
-        # Unfreeze selected layers for fine-tuning (if specified)
-        if fine_tune_layers:
-            for name, param in self.clip_model.named_parameters():
-                if any(layer in name for layer in fine_tune_layers):
+        # ✅ Unfreeze top X layers dynamically
+        if unfreeze_top_x is not None:
+            layers = list(
+                self.clip_model.visual.transformer.resblocks.children()
+            )  # Get all layers
+            for layer in layers[-unfreeze_top_x:]:  # Unfreeze the last X layers
+                for param in layer.parameters():
                     param.requires_grad = True
+                print("unfreezing")
 
         # Classification head
-        self.fc = nn.Linear(self.clip_model.visual.output_dim, 79)
+        self.fc = nn.Sequential(
+            nn.Linear(self.clip_model.visual.output_dim, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),  # ✅ Helps prevent overfitting
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),  # ✅ More regularization
+            nn.Linear(256, 79),  # Final output layer
+        )
 
     def forward(self, images):
         """Forward pass through BioCLIP & classifier head."""

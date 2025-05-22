@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import torch.utils.tensorboard as tb
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 from models import load_model, save_model
 from utils import load_data, compute_accuracy
@@ -25,13 +26,11 @@ def train(
     """Train the model using a structured Train/Validation/Test split."""
 
     # Select device (GPU or CPU)
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        device = torch.device("mps")
-    else:
-        print("CUDA not available, using CPU")
-        device = torch.device("cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
 
     # Set random seed for deterministic training
     torch.manual_seed(seed)
@@ -43,6 +42,9 @@ def train(
 
     # Load model and move to device
     model = load_model(model_name, **kwargs).to(device)
+    # for name, param in model.clip_model.named_parameters():
+    #     print(name)
+    # return
     model.train()
 
     # Load full training dataset
@@ -72,7 +74,18 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     global_step = 0
-    metrics = {"train_acc": [], "val_acc": []}
+    metrics = {
+        "train_acc": [],
+        "train_loss": [],
+        "train_precision": [],
+        "train_recall": [],
+        "train_f1": [],
+        "val_acc": [],
+        "val_loss": [],
+        "val_precision": [],
+        "val_recall": [],
+        "val_f1": [],
+    }
 
     print("Starting training loop")
     # Training loop
@@ -81,6 +94,8 @@ def train(
             metrics[key].clear()  # Clear metrics at start of each epoch
 
         model.train()
+        all_train_labels, all_train_preds = [], []
+
         for img, label in train_dataloader:
             img, label = img.to(device), label.to(device)
 
@@ -94,55 +109,83 @@ def train(
             optimizer.step()
 
             # Compute training accuracy
-            train_acc = (
-                (outputs.argmax(dim=1).type_as(label) == label).float().mean().item()
-            )
+            train_acc = outputs.argmax(dim=1).eq(label).float().mean().item()
             metrics["train_acc"].append(train_acc)
+            metrics["train_loss"].append(loss_val.item())
+
+            # Store predictions for precision/recall calculations
+            all_train_labels.extend(label.cpu().numpy())
+            all_train_preds.extend(outputs.argmax(dim=1).cpu().numpy())
 
             global_step += 1
+
+        # Compute precision, recall, F1-score for training
+        train_precision = precision_score(
+            all_train_labels, all_train_preds, average="macro", zero_division=0
+        )
+        train_recall = recall_score(
+            all_train_labels, all_train_preds, average="macro", zero_division=0
+        )
+        train_f1 = f1_score(
+            all_train_labels, all_train_preds, average="macro", zero_division=0
+        )
+
+        metrics["train_precision"].append(train_precision)
+        metrics["train_recall"].append(train_recall)
+        metrics["train_f1"].append(train_f1)
 
         # Evaluate model on validation set
         with torch.inference_mode():
             model.eval()
+            all_val_labels, all_val_preds = [], []
             for img, label in val_dataloader:
                 img, label = img.to(device), label.to(device)
 
                 # Compute validation accuracy
                 pred = model(img)
-                val_acc = (
-                    (pred.argmax(dim=1).type_as(label) == label).float().mean().item()
-                )
+                val_acc = pred.argmax(dim=1).eq(label).float().mean().item()
+                val_loss = loss_func(pred, label).item()
+
                 metrics["val_acc"].append(val_acc)
+                metrics["val_loss"].append(val_loss)
+
+                all_val_labels.extend(label.cpu().numpy())
+                all_val_preds.extend(pred.argmax(dim=1).cpu().numpy())
+
+            # Compute precision, recall, F1-score for validation
+            val_precision = precision_score(
+                all_val_labels, all_val_preds, average="macro", zero_division=0
+            )
+            val_recall = recall_score(
+                all_val_labels, all_val_preds, average="macro", zero_division=0
+            )
+            val_f1 = f1_score(
+                all_val_labels, all_val_preds, average="macro", zero_division=0
+            )
+
+            metrics["val_precision"].append(val_precision)
+            metrics["val_recall"].append(val_recall)
+            metrics["val_f1"].append(val_f1)
 
         # Log metrics to TensorBoard
-        epoch_train_acc = torch.tensor(metrics["train_acc"]).mean()
-        epoch_val_acc = torch.tensor(metrics["val_acc"]).mean()
+        logger.add_scalar("train/accuracy", np.mean(metrics["train_acc"]), global_step)
+        logger.add_scalar("train/loss", np.mean(metrics["train_loss"]), global_step)
+        logger.add_scalar("train/precision", train_precision, global_step)
+        logger.add_scalar("train/recall", train_recall, global_step)
+        logger.add_scalar("train/f1-score", train_f1, global_step)
 
-        logger.add_scalar("train_acc", epoch_train_acc.item(), global_step)
-        logger.add_scalar("val_acc", epoch_val_acc.item(), global_step)
+        logger.add_scalar("val/accuracy", np.mean(metrics["val_acc"]), global_step)
+        logger.add_scalar("val/loss", np.mean(metrics["val_loss"]), global_step)
+        logger.add_scalar("val/precision", val_precision, global_step)
+        logger.add_scalar("val/recall", val_recall, global_step)
+        logger.add_scalar("val/f1-score", val_f1, global_step)
 
         # Print progress
         print(
-            f"Epoch {epoch + 1}/{num_epoch}: train_acc={epoch_train_acc:.4f}, val_acc={epoch_val_acc:.4f}"
+            f"Epoch {epoch + 1}/{num_epoch}: train_acc={np.mean(metrics['train_acc']):.4f}, val_acc={np.mean(metrics['val_acc']):.4f}, train_f1={train_f1:.4f}, val_f1={val_f1:.4f}"
         )
 
     # Save model checkpoints
     save_model(model)
     torch.save(model.state_dict(), log_dir / f"{model_name}.pth")
     print(f"Model saved to {log_dir / f'{model_name}.pth'}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_dir", type=str, default="logs")
-    parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--num_epoch", type=int, default=50)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--seed", type=int, default=2024)
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument(
-        "--dataset_path", type=str, default="/content/fathom-net-kaggle-comp/dataset/"
-    )
-
-    # Parse arguments and run training
-    train(**vars(parser.parse_args()))

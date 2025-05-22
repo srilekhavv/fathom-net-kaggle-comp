@@ -155,7 +155,31 @@ class LocalMarineDataset(Dataset):
         """
         self.base_path = base_path
         self.use_roi = use_roi
-        self.annotations = pd.read_csv(os.path.join(base_path, annotations_filename))
+
+        # Load full annotations file
+        annotations_path = os.path.join(base_path, annotations_filename)
+        self.annotations = pd.read_csv(annotations_path)
+
+        # ✅ Get the list of actually downloaded images
+        folder = "rois" if self.use_roi else "images"
+        downloaded_images = set(os.listdir(os.path.join(base_path, folder)))
+
+        # ✅ Keep only rows where the image exists in local storage
+        self.annotations = self.annotations[
+            self.annotations["path"].apply(
+                lambda x: os.path.basename(x) in downloaded_images
+            )
+        ]
+
+        # Create label mapping
+        self.label_mapping = {
+            label: idx
+            for idx, label in enumerate(
+                sorted(self.annotations["label"].dropna().unique())
+            )
+        }
+
+        # Define transformation
         self.transform = (
             transform
             if transform
@@ -167,18 +191,18 @@ class LocalMarineDataset(Dataset):
                 ]
             )
         )
-        self.label_mapping = create_label_mapping(self.annotations)
 
     def __len__(self):
+        """Return the number of available images after filtering."""
         return len(self.annotations)
 
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
 
-        # Skip rows with missing labels
+        # ✅ Ensure the label is valid
         if pd.isna(row["label"]) or row["label"] not in self.label_mapping:
             print(
-                f"Warning: Missing or unrecognized label '{row['label']}' at index {idx}, skipping."
+                f"Warning: Unrecognized label '{row['label']}' at index {idx}, skipping."
             )
             return None  # ✅ Skip bad samples
 
@@ -186,7 +210,13 @@ class LocalMarineDataset(Dataset):
         folder = "rois" if self.use_roi else "images"
         filename = os.path.basename(row["path"])
         image_path = os.path.join(self.base_path, folder, filename)
-        image = Image.open(image_path).convert("RGB")
+
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except FileNotFoundError:
+            print(f"Warning: Image '{image_path}' not found, skipping.")
+            return None  # ✅ Skip missing files safely
+
         image = self.transform(image)
 
         # Encode label using mapped indices
@@ -209,22 +239,3 @@ def load_data(
     """Create a DataLoader for training with GCS-stored images."""
     dataset = LocalMarineDataset(base_path, annotations_filename, use_roi)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
-
-
-# ------------------------------
-# 6. Evaluation Metrics
-# ------------------------------
-
-
-def compute_accuracy(outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    """
-    Compute classification accuracy from model predictions.
-    Arguments:
-        outputs: torch.Tensor of logits/probabilities (shape: batch_size, num_classes)
-        labels: torch.Tensor of true class labels (shape: batch_size,)
-    Returns:
-        Accuracy as a scalar tensor.
-    """
-    # check if the labels are numbers or just names
-    outputs_idx = outputs.argmax(dim=1).type_as(labels)
-    return (outputs_idx == labels).float().mean()
