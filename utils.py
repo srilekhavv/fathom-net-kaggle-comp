@@ -99,7 +99,9 @@ class GCSMarineDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
-        image_path = f"{self.data_folder}/images/{row['path']}"  # Image path in GCS
+        image_path = f"{self.data_folder}/images/{row['path']}".replace(
+            "//", "/"
+        )  # Remove double slashes
         image = load_gcs_image(self.bucket_name, image_path)  # Fetch image
         image = self.transform(image)
         label = encode_label(row["label"], self.label_mapping)  # Encode label
