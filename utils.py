@@ -84,27 +84,45 @@ class GCSMarineDataset(Dataset):
         bucket_name: str,
         data_folder: str,
         annotations_filename: str,
+        use_roi=False,
         transform=None,
     ):
+        """
+        Args:
+            bucket_name (str): GCS bucket name.
+            data_folder (str): The folder in GCS (train or test).
+            annotations_filename (str): The annotations CSV file.
+            use_roi (bool): If True, load images from 'roi/' instead of 'images/'.
+            transform (torchvision.transforms): Image preprocessing transforms.
+        """
         self.bucket_name = bucket_name
         self.data_folder = data_folder
+        self.use_roi = use_roi
         self.annotations = load_gcs_csv(
             bucket_name, f"{data_folder}/{annotations_filename}"
         )
         self.transform = transform if transform else transforms.ToTensor()
-        self.label_mapping = create_label_mapping(self.annotations)
+        self.label_mapping = {
+            name: idx for idx, name in enumerate(self.annotations["label"].unique())
+        }
 
     def __len__(self):
         return len(self.annotations)
 
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
-        image_path = f"{self.data_folder}/images/{row['path']}".replace(
-            "//", "/"
-        )  # Remove double slashes
-        image = load_gcs_image(self.bucket_name, image_path)  # Fetch image
+
+        # Select correct folder (ROI or Images)
+        folder = "roi" if self.use_roi else "images"
+        image_path = f"{self.data_folder}/{folder}/{row['path']}"
+        print(image_path)
+
+        # Load image from GCS
+        image = load_gcs_image(self.bucket_name, image_path)
         image = self.transform(image)
-        label = encode_label(row["label"], self.label_mapping)  # Encode label
+
+        # Encode label
+        label = encode_label(row["label"], self.label_mapping)
         return image, label
 
 
@@ -119,9 +137,10 @@ def load_data(
     annotations_filename: str,
     batch_size: int = 128,
     shuffle: bool = False,
+    use_roi: bool = True,
 ) -> DataLoader:
     """Create a DataLoader for training with GCS-stored images."""
-    dataset = GCSMarineDataset(bucket_name, data_folder, annotations_filename)
+    dataset = GCSMarineDataset(bucket_name, data_folder, annotations_filename, use_roi)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
 
 
@@ -139,5 +158,6 @@ def compute_accuracy(outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tenso
     Returns:
         Accuracy as a scalar tensor.
     """
+    # check if the labels are numbers or just names
     outputs_idx = outputs.argmax(dim=1).type_as(labels)
     return (outputs_idx == labels).float().mean()
