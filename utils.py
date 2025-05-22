@@ -1,150 +1,19 @@
 import os
-import io
 import torch
 import pandas as pd
-from pathlib import Path
 from PIL import Image
-from google.cloud import storage
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-
-# ------------------------------
-# 1. Google Cloud Authentication
-# ------------------------------
-
-
-def authenticate_gcs(service_account_json=None):
-    """Authenticate with Google Cloud using a service account key."""
-    if service_account_json:
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_json
-    try:
-        storage_client = storage.Client()
-        _ = storage_client.list_buckets()
-        print("Google Cloud Authentication Successful!")
-    except Exception as e:
-        print("Google Cloud Authentication Failed:", e)
-        print("Please provide a valid service account key.")
-
-
-# Call authentication once when utils is imported
-SERVICE_ACCOUNT_PATH = "fathom-net-kaggle-9a123ad1b993.json"  # Update with correct path
-authenticate_gcs(SERVICE_ACCOUNT_PATH)
-
-# ------------------------------
-# 2. Google Cloud Storage Helpers
-# ------------------------------
-
-
-def get_gcs_client():
-    """Returns an authenticated Google Cloud Storage client."""
-    return storage.Client()
-
-
-def load_gcs_csv(bucket_name: str, file_path: str) -> pd.DataFrame:
-    """Fetch CSV file from GCS and load it into a Pandas DataFrame."""
-    client = get_gcs_client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(file_path)
-    csv_bytes = blob.download_as_bytes()
-    return pd.read_csv(io.BytesIO(csv_bytes))
-
-
-def load_gcs_image(bucket_name: str, file_path: str) -> Image.Image:
-    """Fetch image from GCS and return a PIL Image."""
-    client = get_gcs_client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(file_path)
-    image_bytes = blob.download_as_bytes()
-    return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-
-# ------------------------------
-# 3. Data Processing & Encoding
-# ------------------------------
-
-
-def create_label_mapping(annotations: pd.DataFrame) -> dict:
-    """Ensure labels are mapped to unique indices."""
-    unique_labels = annotations["label"].dropna().unique()  # ✅ Remove NaNs
-    label_mapping = {
-        label: idx for idx, label in enumerate(sorted(unique_labels))
-    }  # ✅ Ensure consistent ordering
-    print("Label Mapping:", label_mapping)  # ✅ Debug: Print label mapping
-    return label_mapping
-
-
-def encode_label(label: str, label_mapping: dict) -> torch.Tensor:
-    """Convert a class label into a numerical index tensor."""
-    return torch.tensor(label_mapping[label], dtype=torch.long)
-
-
-# ------------------------------
-# 4. Dataset Class for GCS
-# ------------------------------
-
-
-class GCSMarineDataset(Dataset):
-    def __init__(
-        self,
-        bucket_name: str,
-        data_folder: str,
-        annotations_filename: str,
-        use_roi=False,
-        transform=None,
-    ):
-        """
-        Args:
-            bucket_name (str): GCS bucket name.
-            data_folder (str): The folder in GCS (train or test).
-            annotations_filename (str): The annotations CSV file.
-            use_roi (bool): If True, load images from 'roi/' instead of 'images/'.
-            transform (torchvision.transforms): Image preprocessing transforms.
-        """
-        self.bucket_name = bucket_name
-        self.data_folder = data_folder
-        self.use_roi = use_roi
-        self.annotations = load_gcs_csv(
-            bucket_name, f"{data_folder}/{annotations_filename}"
-        )
-        self.transform = (
-            transform
-            if transform
-            else transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),  # ✅ Ensure uniform image size
-                    transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-                ]
-            )
-        )
-
-        self.label_mapping = {
-            name: idx for idx, name in enumerate(self.annotations["label"].unique())
-        }
-
-    def __len__(self):
-        return len(self.annotations)
-
-    def __getitem__(self, idx):
-        row = self.annotations.iloc[idx]
-        filename = os.path.basename(row["path"])
-        # Select correct folder (ROI or Images)
-        folder = "rois" if self.use_roi else "images"
-        image_path = f"{self.data_folder}/{folder}/{filename}"
-        # print("image_path",image_path)
-
-        # Load image from GCS
-        image = load_gcs_image(self.bucket_name, image_path)
-        image = self.transform(image)
-
-        # Encode label
-        label = encode_label(row["label"], self.label_mapping)
-        return image, label
 
 
 class LocalMarineDataset(Dataset):
     def __init__(
-        self, base_path: str, annotations_filename: str, use_roi=False, transform=None
+        self,
+        base_path: str,
+        annotations_filename: str,
+        use_roi=False,
+        transform=None,
+        taxonomy_tree=None,
     ):
         """
         Args:
@@ -152,9 +21,11 @@ class LocalMarineDataset(Dataset):
             annotations_filename (str): CSV file with image paths and labels.
             use_roi (bool): If True, load images from 'roi/' instead of 'images/'.
             transform (torchvision.transforms): Image preprocessing transforms.
+            taxonomy_tree (dict): Reference taxonomy structure for hierarchical classification.
         """
         self.base_path = base_path
         self.use_roi = use_roi
+        self.taxonomy_tree = taxonomy_tree
 
         # Load full annotations file
         annotations_path = os.path.join(base_path, annotations_filename)
@@ -164,19 +35,17 @@ class LocalMarineDataset(Dataset):
         folder = "rois" if self.use_roi else "images"
         downloaded_images = set(os.listdir(os.path.join(base_path, folder)))
 
-        # ✅ Keep only rows where the image exists in local storage
+        # ✅ Filter annotations to only include existing images
         self.annotations = self.annotations[
             self.annotations["path"].apply(
                 lambda x: os.path.basename(x) in downloaded_images
             )
         ]
 
-        # Create label mapping
+        # ✅ Store hierarchical labels
         self.label_mapping = {
-            label: idx
-            for idx, label in enumerate(
-                sorted(self.annotations["label"].dropna().unique())
-            )
+            rank: {label: idx for idx, label in enumerate(sorted(classes))}
+            for rank, classes in taxonomy_tree.items()
         }
 
         # Define transformation
@@ -185,7 +54,7 @@ class LocalMarineDataset(Dataset):
             if transform
             else transforms.Compose(
                 [
-                    transforms.Resize((224, 224)),  # ✅ Ensure uniform image size
+                    transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ]
@@ -199,8 +68,11 @@ class LocalMarineDataset(Dataset):
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
 
-        # ✅ Ensure the label is valid
-        if pd.isna(row["label"]) or row["label"] not in self.label_mapping:
+        # ✅ Ensure label exists in ANY taxonomic rank
+        label_found = any(
+            row["label"] in rank_labels for rank_labels in self.taxonomy_tree.values()
+        )
+        if pd.isna(row["label"]) or not label_found:
             print(
                 f"Warning: Unrecognized label '{row['label']}' at index {idx}, skipping."
             )
@@ -219,9 +91,14 @@ class LocalMarineDataset(Dataset):
 
         image = self.transform(image)
 
-        # Encode label using mapped indices
-        label = torch.tensor(self.label_mapping[row["label"]], dtype=torch.long)
-        return image, label
+        # ✅ Encode hierarchical labels
+        labels = {
+            rank: torch.tensor(self.label_mapping[rank][row["label"]], dtype=torch.long)
+            for rank in self.taxonomy_tree.keys()
+            if row["label"] in self.label_mapping[rank]
+        }
+
+        return image, labels
 
 
 # ------------------------------
@@ -235,7 +112,45 @@ def load_data(
     batch_size: int = 128,
     shuffle: bool = False,
     use_roi: bool = True,
+    taxonomy_tree=None,
 ) -> DataLoader:
-    """Create a DataLoader for training with GCS-stored images."""
-    dataset = LocalMarineDataset(base_path, annotations_filename, use_roi)
+    """Create a DataLoader for training with hierarchical taxonomy."""
+    dataset = LocalMarineDataset(
+        base_path, annotations_filename, use_roi, taxonomy_tree=taxonomy_tree
+    )
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
+
+
+def create_taxonomic_mapping(labels):
+    """Sorts labels into their correct taxonomic rank."""
+    taxonomy_tree = {
+        "kingdom": set(),
+        "phylum": set(),
+        "class": set(),
+        "order": set(),
+        "family": set(),
+        "genus": set(),
+        "species": set(),
+    }
+
+    for label in labels:
+        rank = classify_taxonomic_rank(label)
+        taxonomy_tree[rank].add(label)
+
+    return taxonomy_tree
+
+
+def classify_taxonomic_rank(label):
+    """Classifies a label into one of the taxonomic ranks."""
+    if " " in label:
+        return "species"
+    elif label.endswith("idae"):
+        return "family"
+    elif label.endswith("formes"):
+        return "order"
+    elif label.endswith("phyta") or label.endswith("mycota"):
+        return "phylum"
+    elif label.endswith("aceae"):
+        return "class"
+    else:
+        return "genus"  # Default assumption
