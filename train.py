@@ -6,7 +6,7 @@ import torch.utils.tensorboard as tb
 from torch.utils.data import random_split
 
 from models import MarineClassifier
-from utils import load_data, create_taxonomic_mapping
+from utils import load_data, get_taxonomic_tree
 from metrics import hierarchical_loss
 
 
@@ -33,7 +33,7 @@ def train(
         batch_size=batch_size,
         use_roi=True,
     )
-    taxonomy_tree = create_taxonomic_mapping(
+    taxonomy_tree = get_taxonomic_tree(
         full_train_dataset.dataset.annotations["concept_name"].unique()
     )
 

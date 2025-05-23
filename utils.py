@@ -4,6 +4,34 @@ import pandas as pd
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
+from fathomnet.api import worms
+
+
+def get_taxonomic_tree(labels):
+    """Fetch taxonomic hierarchy for each label using WoRMS API."""
+    taxonomy_tree = {
+        rank: set()
+        for rank in [
+            "kingdom",
+            "phylum",
+            "class",
+            "order",
+            "family",
+            "genus",
+            "species",
+        ]
+    }
+
+    for label in labels:
+        ancestors = worms.get_ancestors_names(
+            label
+        )  # ✅ Fetch full taxonomy dynamically
+        for rank, name in zip(
+            taxonomy_tree.keys(), ancestors[::-1]
+        ):  # Reverse order to match ranks
+            taxonomy_tree[rank].add(name)
+
+    return taxonomy_tree
 
 
 class LocalMarineDataset(Dataset):
@@ -41,11 +69,13 @@ class LocalMarineDataset(Dataset):
                 lambda x: os.path.basename(x) in downloaded_images
             )
         ]
+        # ✅ Fetch taxonomic hierarchy dynamically
+        self.taxonomy_tree = get_taxonomic_tree(self.annotations["label"].unique())
 
-        # ✅ Store hierarchical labels
+        # Encode labels based on taxonomy
         self.label_mapping = {
             rank: {label: idx for idx, label in enumerate(sorted(classes))}
-            for rank, classes in taxonomy_tree.items()
+            for rank, classes in self.taxonomy_tree.items()
         }
 
         # Define transformation
@@ -119,38 +149,3 @@ def load_data(
         base_path, annotations_filename, use_roi, taxonomy_tree=taxonomy_tree
     )
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
-
-
-def create_taxonomic_mapping(labels):
-    """Sorts labels into their correct taxonomic rank."""
-    taxonomy_tree = {
-        "kingdom": set(),
-        "phylum": set(),
-        "class": set(),
-        "order": set(),
-        "family": set(),
-        "genus": set(),
-        "species": set(),
-    }
-
-    for label in labels:
-        rank = classify_taxonomic_rank(label)
-        taxonomy_tree[rank].add(label)
-
-    return taxonomy_tree
-
-
-def classify_taxonomic_rank(label):
-    """Classifies a label into one of the taxonomic ranks."""
-    if " " in label:
-        return "species"
-    elif label.endswith("idae"):
-        return "family"
-    elif label.endswith("formes"):
-        return "order"
-    elif label.endswith("phyta") or label.endswith("mycota"):
-        return "phylum"
-    elif label.endswith("aceae"):
-        return "class"
-    else:
-        return "genus"  # Default assumption
