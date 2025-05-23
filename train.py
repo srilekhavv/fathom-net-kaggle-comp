@@ -5,7 +5,7 @@ from pathlib import Path
 import torch.utils.tensorboard as tb
 from torch.utils.data import random_split
 
-from models import MarineClassifier
+from models import load_model
 from utils import load_data, get_taxonomic_tree
 from metrics import hierarchical_loss
 
@@ -18,6 +18,7 @@ def train(
     batch_size=128,
     seed=2024,
     dataset_path="/content/fathom-net-kaggle-comp/dataset/",
+    **model_kwargs,
 ):
     """Train the model using hierarchical classification."""
 
@@ -37,8 +38,9 @@ def train(
         full_train_dataset.dataset.annotations["concept_name"].unique()
     )
 
-    # Initialize model
-    model = MarineClassifier(unfreeze_top_x=8, taxonomy_tree=taxonomy_tree).to(device)
+    model = load_model("classifier", taxonomy_tree=taxonomy_tree, **model_kwargs).to(
+        device
+    )
     model.train()
 
     # Split train & validation datasets
