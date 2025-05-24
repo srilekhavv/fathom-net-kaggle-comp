@@ -70,7 +70,7 @@ def train(
         model.train()
         for img, labels in train_dataloader:
             img, labels = img.to(device), {
-                rank: labels[rank].to(device) for rank in taxonomy_tree.keys()
+                rank: labels[rank].to(device) for rank in labels.keys()
             }
 
             # Forward pass
@@ -89,7 +89,7 @@ def train(
             val_distances = []
             for img, labels in val_dataloader:
                 img, labels = img.to(device), {
-                    rank: labels[rank].to(device) for rank in taxonomy_tree.keys()
+                    rank: labels[rank].to(device) for rank in labels.keys()
                 }
                 outputs = model(img)
                 val_loss, val_distance = hierarchical_loss(

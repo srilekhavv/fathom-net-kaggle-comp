@@ -15,7 +15,7 @@ class MarineClassifier(nn.Module):
             "hf-hub:imageomics/bioclip"
         )
 
-        # Freeze all layers initially
+        # ✅ Freeze all layers initially
         for param in self.clip_model.parameters():
             param.requires_grad = False
 
@@ -29,19 +29,81 @@ class MarineClassifier(nn.Module):
         # ✅ Ensure taxonomy_tree is not None
         self.taxonomy_tree = taxonomy_tree if taxonomy_tree else {}
 
+        # ✅ DEBUG: Print taxonomy tree structure before classifier initialization
+        print(f"\n[DEBUG] Taxonomy Tree Loaded:\n{self.taxonomy_tree}")
+
         # ✅ Multi-rank classification head (handles missing ranks safely)
         self.fc = nn.ModuleDict(
             {
-                rank: nn.Linear(self.clip_model.visual.output_dim, len(classes))
-                for rank, classes in self.taxonomy_tree.items()
-                if len(classes) > 0  # ✅ Avoid empty classes error
+                rank: nn.Linear(
+                    self.clip_model.visual.output_dim,
+                    max(
+                        2,
+                        len(
+                            set(
+                                [
+                                    taxonomy[rank]
+                                    for taxonomy in self.taxonomy_tree.values()
+                                    if rank in taxonomy
+                                ]
+                            )
+                        ),
+                    ),
+                )
+                for rank in [
+                    "kingdom",
+                    "phylum",
+                    "class",
+                    "order",
+                    "family",
+                    "genus",
+                    "species",
+                ]
             }
         )
+
+        # ✅ DEBUG: Print initialized classifier heads and output neurons
+        for rank, layer in self.fc.items():
+            print(
+                f"[DEBUG] Initialized Layer: '{rank}' → Output Classes: {layer.out_features}"
+            )
 
     def forward(self, images):
         """Forward pass through BioCLIP & classifier head."""
         features = self.clip_model.encode_image(images)
-        return {rank: self.fc[rank](features) for rank in self.fc}
+
+        # ✅ DEBUG: Print shape of extracted features
+        print(f"\n[DEBUG] Extracted Features Shape: {features.shape}")
+
+        # ✅ Ensure each rank always gets valid predictions
+        outputs = {
+            rank: (
+                self.fc[rank](features)
+                if rank in self.fc
+                else torch.zeros(
+                    features.shape[0],
+                    max(1, len(set(self.taxonomy_tree.get(rank, {}).values()))),
+                )
+            )
+            for rank in [
+                "kingdom",
+                "phylum",
+                "class",
+                "order",
+                "family",
+                "genus",
+                "species",
+            ]
+        }
+
+        # ✅ DEBUG: Print model output keys
+        print(f"[DEBUG] Model Output Keys: {list(outputs.keys())}")
+
+        # ✅ DEBUG: Verify logits shape for each rank
+        for rank, logits in outputs.items():
+            print(f"[DEBUG] Rank '{rank}' → Logits Shape: {logits.shape}")
+
+        return outputs
 
 
 # ------------------------------

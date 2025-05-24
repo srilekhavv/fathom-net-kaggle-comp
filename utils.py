@@ -44,56 +44,41 @@ class LocalMarineDataset(Dataset):
         transform=None,
         taxonomy_tree=None,
     ):
-        """
-        Args:
-            base_path (str): Local dataset directory (e.g., '/content/dataset/train').
-            annotations_filename (str): CSV file with image paths and labels.
-            use_roi (bool): If True, load images from 'roi/' instead of 'images/'.
-            transform (torchvision.transforms): Image preprocessing transforms.
-            taxonomy_tree (dict): Reference taxonomy structure for hierarchical classification.
-        """
+        """Initialize dataset with taxonomy-aware hierarchical labels."""
         self.base_path = base_path
         self.use_roi = use_roi
         self.taxonomy_tree = taxonomy_tree
 
-        # ✅ Load full annotations file
+        # ✅ Load and filter annotations
         annotations_path = os.path.join(base_path, annotations_filename)
         self.annotations = pd.read_csv(annotations_path)
 
-        # ✅ Get the list of actually downloaded images
         folder = "rois" if self.use_roi else "images"
         downloaded_images = set(os.listdir(os.path.join(base_path, folder)))
-
-        # ✅ Filter annotations to include only existing images
         self.annotations = self.annotations[
             self.annotations["path"].apply(
                 lambda x: os.path.basename(x) in downloaded_images
             )
         ]
 
-        # ✅ Fix paths for Google Colab
         self.annotations["path"] = self.annotations["path"].apply(
-            lambda x: f"/content/fathom-net-kaggle-comp/dataset/train/{folder}/{os.path.basename(x)}"
+            lambda x: f"{base_path}/{folder}/{os.path.basename(x)}"
         )
 
-        # ✅ Fetch taxonomic hierarchy dynamically
+        # ✅ Fetch taxonomic hierarchy dynamically if not provided
         if taxonomy_tree is None:
             self.taxonomy_tree = get_taxonomic_tree(self.annotations["label"].unique())
 
-        print(
-            f"\n[DEBUG] Taxonomy Tree Loaded in Dataset:\n{self.taxonomy_tree}\n"
-        )  # ✅ Debug print
-
-        # ✅ Encode labels based on full ancestry
+        # ✅ Encode taxonomy labels correctly
         self.label_mapping = {
             rank: {
                 label: idx
                 for idx, label in enumerate(
                     sorted(
                         set(
-                            self.taxonomy_tree[label][rank]
-                            for label in self.taxonomy_tree
-                            if rank in self.taxonomy_tree[label]
+                            taxonomy[rank]
+                            for taxonomy in self.taxonomy_tree.values()
+                            if rank in taxonomy
                         )
                     )
                 )
@@ -109,68 +94,51 @@ class LocalMarineDataset(Dataset):
             ]
         }
 
-        print("\n[DEBUG] Label Mapping:")
-        for rank, mapping in self.label_mapping.items():
-            print(f"{rank}: {mapping}")  # ✅ Debug print
-
-        # ✅ Define transformation
-        self.transform = (
-            transform
-            if transform
-            else transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-                ]
-            )
+        # ✅ Define image transformation pipeline
+        self.transform = transform or transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ]
         )
 
     def __len__(self):
-        """Return the number of available images after filtering."""
+        """Return number of available images."""
         return len(self.annotations)
 
     def __getitem__(self, idx):
         row = self.annotations.iloc[idx]
 
-        # ✅ Double-check if the file still exists
+        # ✅ Verify image existence
         image_path = row["path"]
         if not os.path.exists(image_path):
-            print(f"Warning: Image '{image_path}' not found, skipping.")
-            return None  # ✅ Skip missing files safely
+            return None  # Skip missing images safely
 
         image = Image.open(image_path).convert("RGB")
-        image = (
-            self.transform(image) if self.transform else transforms.ToTensor()(image)
-        )
+        image = self.transform(image)
 
-        labels = {}
-        for rank in [
-            "kingdom",
-            "phylum",
-            "class",
-            "order",
-            "family",
-            "genus",
-            "species",
-        ]:
-            if rank in self.taxonomy_tree[row["label"]]:  # ✅ Lookup ancestry correctly
-                labels[rank] = torch.tensor(
+        # ✅ Retrieve taxonomy labels per rank
+        labels = {
+            rank: (
+                torch.tensor(
                     self.label_mapping[rank][self.taxonomy_tree[row["label"]][rank]],
                     dtype=torch.long,
                 )
-            else:
-                unknown_label = f"Unknown_{rank}"
-                labels[rank] = torch.tensor(
-                    self.label_mapping[rank].get(
-                        unknown_label, len(self.label_mapping[rank])
-                    ),
-                    dtype=torch.long,
-                )
+                if rank in self.taxonomy_tree[row["label"]]
+                else torch.tensor(len(self.label_mapping[rank]), dtype=torch.long)
+            )  # Handle missing labels
+            for rank in [
+                "kingdom",
+                "phylum",
+                "class",
+                "order",
+                "family",
+                "genus",
+                "species",
+            ]
+        }
 
-        print(
-            f"[DEBUG] Labels for idx={idx}: {labels}"
-        )  # ✅ Debug print before returning labels
         return image, labels
 
 

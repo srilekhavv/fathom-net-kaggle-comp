@@ -16,8 +16,15 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
     """
     total_loss = 0
     total_distance = 0
+    # print(f"[DEBUG] Available Prediction Keys: {predictions.keys()}")
+    # ✅ Iterate directly over taxonomic ranks
+    for rank in ["kingdom", "phylum", "class", "order", "family", "genus", "species"]:
+        if rank not in predictions or rank not in ground_truth:
+            print(
+                f"[WARNING] Rank '{rank}' is missing from predictions or ground truth. Skipping..."
+            )
+            continue
 
-    for rank in taxonomy_tree.keys():
         pred_logits = predictions[rank]  # Predicted scores
         true_label = ground_truth[rank]  # True labels
 
@@ -50,13 +57,17 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
             for true, pred in zip(true_classes, pred_classes)
         ]
 
-        avg_distance = sum(taxonomic_distances) / len(taxonomic_distances)
+        avg_distance = (
+            sum(taxonomic_distances) / len(taxonomic_distances)
+            if taxonomic_distances
+            else 0
+        )  # ✅ Avoid division errors
         total_loss += rank_loss + (
             distance_penalty * avg_distance
         )  # ✅ Penalize based on hierarchy
         total_distance += avg_distance
 
-    return total_loss / len(taxonomy_tree), total_distance / len(taxonomy_tree)
+    return total_loss / len(predictions), total_distance / len(predictions)
 
 
 def compute_taxonomic_distance(true_class, pred_class, taxonomy_tree):
@@ -73,20 +84,20 @@ def compute_taxonomic_distance(true_class, pred_class, taxonomy_tree):
     Returns:
         int: Hierarchical distance between predictions.
     """
-    # ✅ Find ranks of both classes
+    # ✅ Look up ranks for both classes inside taxonomy_tree
     true_rank = next(
-        (r for r, classes in taxonomy_tree.items() if true_class in classes), None
+        (rank for rank in taxonomy_tree if true_class in taxonomy_tree[rank]), None
     )
     pred_rank = next(
-        (r for r, classes in taxonomy_tree.items() if pred_class in classes), None
+        (rank for rank in taxonomy_tree if pred_class in taxonomy_tree[rank]), None
     )
 
     # ✅ If either class isn't found, return max penalty
-    if not true_rank or not pred_rank:
+    if true_rank is None or pred_rank is None:
         print(
-            f"[WARNING] Taxonomic mapping missing for true_class={true_class} or pred_class={pred_class}"
+            f"[WARNING] Taxonomic mapping missing for true_class='{true_class}' or pred_class='{pred_class}'"
         )
-        return 12
+        return 12  # Assign max penalty
 
     # ✅ Compute hierarchical distance
     rank_order = ["kingdom", "phylum", "class", "order", "family", "genus", "species"]
