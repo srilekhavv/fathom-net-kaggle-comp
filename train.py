@@ -27,15 +27,16 @@ def train(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+    taxonomy_tree = get_taxonomic_tree(
+        full_train_dataset.dataset.annotations["label"].unique()
+    )
+
     # Load dataset and generate taxonomy mapping
     full_train_dataset = load_data(
         os.path.join(dataset_path, "train"),
         "annotations.csv",
         batch_size=batch_size,
         use_roi=True,
-    )
-    taxonomy_tree = get_taxonomic_tree(
-        full_train_dataset.dataset.annotations["concept_name"].unique()
     )
 
     model = load_model("classifier", taxonomy_tree=taxonomy_tree, **model_kwargs).to(
