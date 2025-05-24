@@ -27,17 +27,21 @@ def train(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    taxonomy_tree = get_taxonomic_tree(
-        full_train_dataset.dataset.annotations["label"].unique()
-    )
-
-    # Load dataset and generate taxonomy mapping
+    # ✅ Load dataset first
     full_train_dataset = load_data(
         os.path.join(dataset_path, "train"),
         "annotations.csv",
         batch_size=batch_size,
         use_roi=True,
     )
+
+    # ✅ Generate taxonomy tree **only once**
+    taxonomy_tree = get_taxonomic_tree(
+        full_train_dataset.dataset.annotations["label"].unique()
+    )
+
+    # ✅ Pass the same taxonomy tree to the dataset to avoid duplicate calls
+    full_train_dataset.dataset.taxonomy_tree = taxonomy_tree
 
     model = load_model("classifier", taxonomy_tree=taxonomy_tree, **model_kwargs).to(
         device
