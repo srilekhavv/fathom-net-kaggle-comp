@@ -22,33 +22,16 @@ def get_taxonomic_tree(labels):
     ["kingdom", "phylum", "class", "order", "family", "genus", "species"].
     """
     target_ranks = ["kingdom", "phylum", "class", "order", "family", "genus", "species"]
-    taxonomy_tree = {rank: set() for rank in target_ranks}
+    taxonomy_tree = {}
 
     for label in labels:
-        raw_ancestors = worms.get_ancestors(
-            label
-        )  # ✅ Get full ancestor hierarchy in one call
-
-        if not raw_ancestors.children:  # ✅ No valid taxonomy data returned
-            raise ValueError(
-                f"Error: No valid taxonomy found for '{label}'—check if the name exists in WoRMS."
-            )
-
-        # ✅ Initialize taxonomy storage
-        taxonomy_dict = {}
-
-        # ✅ Start recursive extraction from root node
+        raw_ancestors = worms.get_ancestors(label)
+        taxonomy_dict = {}  # ✅ Store full hierarchy for each label
         extract_taxonomic_ranks(raw_ancestors, target_ranks, taxonomy_dict)
 
-        # ✅ Assign extracted ranks to taxonomy tree
-        for rank in target_ranks:
-            if rank in taxonomy_dict:
-                taxonomy_tree[rank].add(taxonomy_dict[rank])
-            else:
-                taxonomy_tree[rank].add(
-                    f"Unknown_{rank}"
-                )  # ✅ Handle missing lower levels
+        taxonomy_tree[label] = taxonomy_dict  # ✅ Save full ancestry per label
 
+    print(f"\n[DEBUG] Taxonomy Tree Extracted:\n{taxonomy_tree}\n")  # ✅ Debug print
     return taxonomy_tree
 
 
@@ -96,15 +79,41 @@ class LocalMarineDataset(Dataset):
         # ✅ Fetch taxonomic hierarchy dynamically
         if taxonomy_tree is None:
             self.taxonomy_tree = get_taxonomic_tree(self.annotations["label"].unique())
-        print(self.taxonomy_tree)
 
-        # Encode labels based on taxonomy
+        print(
+            f"\n[DEBUG] Taxonomy Tree Loaded in Dataset:\n{self.taxonomy_tree}\n"
+        )  # ✅ Debug print
+
+        # ✅ Encode labels based on full ancestry
         self.label_mapping = {
-            rank: {label: idx for idx, label in enumerate(sorted(classes))}
-            for rank, classes in self.taxonomy_tree.items()
+            rank: {
+                label: idx
+                for idx, label in enumerate(
+                    sorted(
+                        set(
+                            self.taxonomy_tree[label][rank]
+                            for label in self.taxonomy_tree
+                            if rank in self.taxonomy_tree[label]
+                        )
+                    )
+                )
+            }
+            for rank in [
+                "kingdom",
+                "phylum",
+                "class",
+                "order",
+                "family",
+                "genus",
+                "species",
+            ]
         }
 
-        # Define transformation
+        print("\n[DEBUG] Label Mapping:")
+        for rank, mapping in self.label_mapping.items():
+            print(f"{rank}: {mapping}")  # ✅ Debug print
+
+        # ✅ Define transformation
         self.transform = (
             transform
             if transform
@@ -136,19 +145,32 @@ class LocalMarineDataset(Dataset):
         )
 
         labels = {}
-        for rank in self.taxonomy_tree.keys():
-            if row["label"] in self.label_mapping[rank]:  # ✅ Ensure species is mapped
+        for rank in [
+            "kingdom",
+            "phylum",
+            "class",
+            "order",
+            "family",
+            "genus",
+            "species",
+        ]:
+            if rank in self.taxonomy_tree[row["label"]]:  # ✅ Lookup ancestry correctly
                 labels[rank] = torch.tensor(
-                    self.label_mapping[rank][row["label"]], dtype=torch.long
+                    self.label_mapping[rank][self.taxonomy_tree[row["label"]][rank]],
+                    dtype=torch.long,
                 )
             else:
-                print(
-                    f"Warning: '{row['label']}' missing in taxonomy mapping for rank '{rank}'"
-                )
+                unknown_label = f"Unknown_{rank}"
                 labels[rank] = torch.tensor(
-                    -1, dtype=torch.long
-                )  # ✅ Assign -1 only if mapping is missing
+                    self.label_mapping[rank].get(
+                        unknown_label, len(self.label_mapping[rank])
+                    ),
+                    dtype=torch.long,
+                )
 
+        print(
+            f"[DEBUG] Labels for idx={idx}: {labels}"
+        )  # ✅ Debug print before returning labels
         return image, labels
 
 
