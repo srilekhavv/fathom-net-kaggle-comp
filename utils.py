@@ -93,6 +93,25 @@ class LocalMarineDataset(Dataset):
                 "species",
             ]
         }
+        for rank in [
+            "kingdom",
+            "phylum",
+            "class",
+            "order",
+            "family",
+            "genus",
+            "species",
+        ]:
+            extracted_labels = set(
+                self.taxonomy_tree[label][rank]
+                for label in self.taxonomy_tree
+                if rank in self.taxonomy_tree[label]
+            )
+
+            if not extracted_labels.issubset(set(self.label_mapping[rank].keys())):
+                print(
+                    f"[ERROR] Rank '{rank}' has taxonomy labels missing from label_mapping!"
+                )
 
         # ✅ Define image transformation pipeline
         self.transform = transform or transforms.Compose(
@@ -118,16 +137,16 @@ class LocalMarineDataset(Dataset):
         image = Image.open(image_path).convert("RGB")
         image = self.transform(image)
 
+        print(f"[DEBUG] taxonomy tree keys: {self.taxonomy_tree[row['label']]}")
         # ✅ Retrieve taxonomy labels per rank
         labels = {
-            rank: (
-                torch.tensor(
-                    self.label_mapping[rank][self.taxonomy_tree[row["label"]][rank]],
-                    dtype=torch.long,
-                )
-                if rank in self.taxonomy_tree[row["label"]]
-                else torch.tensor(len(self.label_mapping[rank]), dtype=torch.long)
-            )  # Handle missing labels
+            rank: torch.tensor(
+                self.label_mapping[rank].get(
+                    self.taxonomy_tree[row["label"]].get(rank, f"Unknown_{rank}"),
+                    len(self.label_mapping[rank]),  # ✅ Handle missing entries safely
+                ),
+                dtype=torch.long,
+            )
             for rank in [
                 "kingdom",
                 "phylum",
