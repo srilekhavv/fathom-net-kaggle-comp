@@ -38,6 +38,7 @@ def train(
 
     # ✅ Pass the same taxonomy tree to the dataset to avoid duplicate calls
     taxonomy_tree = full_train_dataset.dataset.taxonomy_tree
+    label_mapping = full_train_dataset.dataset.label_mapping
 
     model = load_model("classifier", taxonomy_tree=taxonomy_tree, **model_kwargs).to(
         device
@@ -91,7 +92,14 @@ def train(
 
             # Forward pass
             outputs = model(img)
-            loss_val, batch_distance = hierarchical_loss(outputs, labels, taxonomy_tree)
+            print(f"[DEBUG] Train Predictions vs. True Labels:")
+            print(
+                f"→ Predicted: {[outputs[rank].argmax(dim=1).cpu().tolist() for rank in outputs]}"
+            )
+            print(f"→ True Labels: {[labels[rank].cpu().tolist() for rank in labels]}")
+            loss_val, batch_distance = hierarchical_loss(
+                outputs, labels, taxonomy_tree, label_mapping
+            )
 
             # ✅ Accumulate training taxonomic distance
             total_train_distance += batch_distance
@@ -149,8 +157,15 @@ def train(
                     rank: labels[rank].to(device) for rank in labels.keys()
                 }
                 outputs = model(img)
+                print(f"[DEBUG] Validation Predictions vs. True Labels:")
+                print(
+                    f"→ Predicted: {[outputs[rank].argmax(dim=1).cpu().tolist() for rank in outputs]}"
+                )
+                print(
+                    f"→ True Labels: {[labels[rank].cpu().tolist() for rank in labels]}"
+                )
                 val_loss, val_distance = hierarchical_loss(
-                    outputs, labels, taxonomy_tree
+                    outputs, labels, taxonomy_tree, label_mapping
                 )
 
                 # ✅ Compute accuracy per taxonomy rank

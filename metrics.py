@@ -61,17 +61,18 @@ def hierarchical_loss(
 
 
 def compute_taxonomic_distance(
-    true_label_idx, pred_label_idx, label_mapping, taxonomy_tree
+    true_label_idx, pred_label_idx, taxonomy_tree, label_mapping
 ):
     """Finds the highest divergence point and sums all mistakes in taxonomy path."""
 
     rank_order = ["kingdom", "phylum", "class", "order", "family", "genus", "species"]
 
-    # ✅ Decode label indices to taxonomic names
+    # ✅ Decode label indices dynamically across ranks
     true_label = next(
         (
             name
-            for name, idx in label_mapping["species"].items()
+            for rank in rank_order
+            for name, idx in label_mapping[rank].items()
             if idx == true_label_idx
         ),
         "UNKNOWN",
@@ -79,7 +80,8 @@ def compute_taxonomic_distance(
     pred_label = next(
         (
             name
-            for name, idx in label_mapping["species"].items()
+            for rank in rank_order
+            for name, idx in label_mapping[rank].items()
             if idx == pred_label_idx
         ),
         "UNKNOWN",
@@ -121,6 +123,8 @@ def compute_taxonomic_distance(
         and divergence_rank
         and rank_order.index(r) > rank_order.index(divergence_rank)
     )
+
+    # print(f"distance: {true_mistakes + pred_mistakes}")
 
     return true_mistakes + pred_mistakes  # ✅ Total taxonomic error count
 
