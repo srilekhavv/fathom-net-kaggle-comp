@@ -112,7 +112,7 @@ class LocalMarineDataset(Dataset):
                 print(
                     f"[ERROR] Rank '{rank}' has taxonomy labels missing from label_mapping!"
                 )
-
+        print(f"[DEBUG] label_mapping: {self.label_mapping}")
         # ✅ Define image transformation pipeline
         self.transform = transform or transforms.Compose(
             [
@@ -137,7 +137,7 @@ class LocalMarineDataset(Dataset):
         image = Image.open(image_path).convert("RGB")
         image = self.transform(image)
 
-        print(f"[DEBUG] taxonomy tree keys: {self.taxonomy_tree[row['label']]}")
+        # print(f"[DEBUG] taxonomy tree keys: {self.taxonomy_tree[row['label']]}")
         # ✅ Retrieve taxonomy labels per rank
         labels = {
             rank: torch.tensor(
