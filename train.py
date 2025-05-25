@@ -89,6 +89,7 @@ def train(
 
         # ✅ Training loop
         for img, labels in train_dataloader:
+            print(f"[DEBUG] TRAINING")
             img, labels = img.to(device), {
                 rank: labels[rank].to(device) for rank in labels.keys()
             }
@@ -140,6 +141,7 @@ def train(
 
         with torch.inference_mode():
             for img, labels in val_dataloader:
+                print(f"[DEBUG] VAL")
                 img, labels = img.to(device), {
                     rank: labels[rank].to(device) for rank in labels.keys()
                 }

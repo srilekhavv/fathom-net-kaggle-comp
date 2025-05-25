@@ -73,7 +73,7 @@ class MarineClassifier(nn.Module):
         features = self.clip_model.encode_image(images)
 
         # ✅ DEBUG: Print shape of extracted features
-        # print(f"\n[DEBUG] Extracted Features Shape: {features.shape}")
+        print(f"[DEBUG] Extracted Features Shape: {features.shape}")
 
         # ✅ Ensure each rank always gets valid predictions
         outputs = {
@@ -96,13 +96,13 @@ class MarineClassifier(nn.Module):
             ]
         }
 
-        # ✅ DEBUG: Print model output keys
-        # print(f"[DEBUG] Model Output Keys: {list(outputs.keys())}")
+        # # ✅ DEBUG: Print model output keys
+        # print(f"[DEBUG] Model Output: {outputs}")
 
-        # ✅ DEBUG: Verify logits shape for each rank
+        # # ✅ DEBUG: Verify logits shape for each rank
         # for rank, logits in outputs.items():
-        #     print(f"[DEBUG] Rank '{rank}' → Logits Shape: {logits.shape}")
-
+        #     print(f"[DEBUG] Rank '{rank}' → Logits: {logits.softmax(dim=1).cpu().tolist()}")
+        # print("\n")
         return outputs
 
 

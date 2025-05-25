@@ -6,6 +6,13 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
     total_loss = 0
     total_distance = 0
 
+    for rank, logits in predictions.items():
+        pred_class = logits.argmax(dim=1).cpu().tolist()
+        true_class = ground_truth[rank].cpu().tolist()
+        print(
+            f"[DEBUG] Rank '{rank}' → Predicted: {pred_class}, Ground Truth: {true_class}"
+        )
+
     for rank in ["kingdom", "phylum", "class", "order", "family", "genus", "species"]:
         if rank not in predictions or rank not in ground_truth:
             continue  # ✅ Skip missing ranks
