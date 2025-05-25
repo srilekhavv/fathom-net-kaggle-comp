@@ -58,20 +58,62 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
     return total_loss / len(predictions), total_distance / len(predictions)
 
 
-def compute_taxonomic_distance(true_class, pred_class, taxonomy_tree):
-    """Computes the taxonomic distance between predicted and true labels."""
-    true_rank = next(
-        (rank for rank in taxonomy_tree if true_class in taxonomy_tree[rank]), None
-    )
-    pred_rank = next(
-        (rank for rank in taxonomy_tree if pred_class in taxonomy_tree[rank]), None
-    )
-
-    if true_rank is None or pred_rank is None:
-        return 12  # ✅ Assign max penalty if class not found
+def compute_taxonomic_distance(
+    true_label_idx, pred_label_idx, label_mapping, taxonomy_tree
+):
+    """Finds the highest divergence point and sums all mistakes in taxonomy path."""
 
     rank_order = ["kingdom", "phylum", "class", "order", "family", "genus", "species"]
-    return abs(rank_order.index(true_rank) - rank_order.index(pred_rank))
+
+    # ✅ Decode label indices to taxonomic names
+    true_label = next(
+        (
+            name
+            for name, idx in label_mapping["species"].items()
+            if idx == true_label_idx
+        ),
+        "UNKNOWN",
+    )
+    pred_label = next(
+        (
+            name
+            for name, idx in label_mapping["species"].items()
+            if idx == pred_label_idx
+        ),
+        "UNKNOWN",
+    )
+
+    if true_label == "UNKNOWN" or pred_label == "UNKNOWN":
+        print(
+            f"[WARNING] Label index not found: True={true_label_idx}, Pred={pred_label_idx}"
+        )
+        return 12  # ✅ Default max distance if decoding fails
+
+    # ✅ Extract taxonomy paths
+    true_taxonomy = taxonomy_tree.get(true_label, {})
+    pred_taxonomy = taxonomy_tree.get(pred_label, {})
+
+    # ✅ Find the highest point of divergence
+    divergence_rank = None
+    for rank in rank_order:
+        if (
+            rank in true_taxonomy
+            and rank in pred_taxonomy
+            and true_taxonomy[rank] == pred_taxonomy[rank]
+        ):
+            divergence_rank = rank
+        else:
+            break  # ✅ Stop at first mismatch
+
+    # ✅ Count mistakes **after the divergence point**
+    true_mistakes = sum(
+        1 for r in rank_order if r in true_taxonomy and r != divergence_rank
+    )
+    pred_mistakes = sum(
+        1 for r in rank_order if r in pred_taxonomy and r != divergence_rank
+    )
+
+    return true_mistakes + pred_mistakes  # ✅ Total taxonomic error count
 
 
 def compute_accuracy(predictions, ground_truth):

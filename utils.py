@@ -69,9 +69,9 @@ class LocalMarineDataset(Dataset):
         if taxonomy_tree is None:
             self.taxonomy_tree = get_taxonomic_tree(self.annotations["label"].unique())
 
-        missing_labels = set(self.annotations["label"].unique()) - set(
-            self.taxonomy_tree.keys()
-        )
+        # missing_labels = set(self.annotations["label"].unique()) - set(
+        #     self.taxonomy_tree.keys()
+        # )
         # print(f"[DEBUG] Missing Species Labels in taxonomy_tree: {missing_labels}")
 
         # ✅ Collect all unique labels across taxonomy ranks
