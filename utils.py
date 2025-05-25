@@ -69,20 +69,14 @@ class LocalMarineDataset(Dataset):
         if taxonomy_tree is None:
             self.taxonomy_tree = get_taxonomic_tree(self.annotations["label"].unique())
 
-        # ✅ Encode taxonomy labels correctly
-        self.label_mapping = {
-            rank: {
-                label: idx
-                for idx, label in enumerate(
-                    sorted(
-                        set(
-                            taxonomy[rank]
-                            for taxonomy in self.taxonomy_tree.values()
-                            if rank in taxonomy
-                        )
-                    )
-                )
-            }
+        missing_labels = set(self.annotations["label"].unique()) - set(
+            self.taxonomy_tree.keys()
+        )
+        print(f"[DEBUG] Missing Species Labels in taxonomy_tree: {missing_labels}")
+
+        # ✅ Collect all unique labels across taxonomy ranks
+        all_labels = {
+            rank: set()
             for rank in [
                 "kingdom",
                 "phylum",
@@ -93,6 +87,18 @@ class LocalMarineDataset(Dataset):
                 "species",
             ]
         }
+
+        for label, taxonomy in self.taxonomy_tree.items():
+            for rank in all_labels:
+                if rank in taxonomy:
+                    all_labels[rank].add(taxonomy[rank])
+
+        # ✅ Ensure label mapping contains all known labels before training
+        self.label_mapping = {
+            rank: {label: idx for idx, label in enumerate(sorted(all_labels[rank]))}
+            for rank in all_labels
+        }
+
         for rank in [
             "kingdom",
             "phylum",
@@ -137,26 +143,33 @@ class LocalMarineDataset(Dataset):
         image = Image.open(image_path).convert("RGB")
         image = self.transform(image)
 
-        # print(f"[DEBUG] taxonomy tree keys: {self.taxonomy_tree[row['label']]}")
-        # ✅ Retrieve taxonomy labels per rank
-        labels = {
-            rank: torch.tensor(
-                self.label_mapping[rank].get(
-                    self.taxonomy_tree[row["label"]].get(rank, f"Unknown_{rank}"),
-                    len(self.label_mapping[rank]),  # ✅ Handle missing entries safely
-                ),
-                dtype=torch.long,
-            )
-            for rank in [
-                "kingdom",
-                "phylum",
-                "class",
-                "order",
-                "family",
-                "genus",
-                "species",
-            ]
-        }
+        # ✅ Retrieve taxonomy labels per rank safely
+        labels = {}
+        for rank in [
+            "kingdom",
+            "phylum",
+            "class",
+            "order",
+            "family",
+            "genus",
+            "species",
+        ]:
+            true_label = self.taxonomy_tree[row["label"]].get(rank, None)
+
+            if true_label is None:
+                # print(f"[WARNING] Rank '{rank}' missing for label '{row['label']}'")
+                labels[rank] = torch.tensor(
+                    -1, dtype=torch.long
+                )  # ✅ Assign default safe value (-1)
+            elif true_label not in self.label_mapping[rank]:
+                # print(f"[WARNING] Rank '{rank}' → Label '{true_label}' not found in label_mapping!")
+                labels[rank] = torch.tensor(
+                    -1, dtype=torch.long
+                )  # ✅ Assign default safe value (-1)
+            else:
+                labels[rank] = torch.tensor(
+                    self.label_mapping[rank][true_label], dtype=torch.long
+                )
 
         return image, labels
 

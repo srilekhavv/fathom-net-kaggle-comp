@@ -36,13 +36,8 @@ def train(
         use_roi=True,
     )
 
-    # ✅ Generate taxonomy tree **only once**
-    taxonomy_tree = get_taxonomic_tree(
-        full_train_dataset.dataset.annotations["label"].unique()
-    )
-
     # ✅ Pass the same taxonomy tree to the dataset to avoid duplicate calls
-    full_train_dataset.dataset.taxonomy_tree = taxonomy_tree
+    taxonomy_tree = full_train_dataset.dataset.taxonomy_tree
 
     model = load_model("classifier", taxonomy_tree=taxonomy_tree, **model_kwargs).to(
         device
@@ -89,11 +84,11 @@ def train(
 
         # ✅ Training loop
         for img, labels in train_dataloader:
-            print(f"[DEBUG] TRAINING")
+
             img, labels = img.to(device), {
                 rank: labels[rank].to(device) for rank in labels.keys()
             }
-
+            # print(f"[DEBUG] TRAINING: {labels}")
             # Forward pass
             outputs = model(img)
             loss_val, distance_val = hierarchical_loss(outputs, labels, taxonomy_tree)
@@ -141,7 +136,7 @@ def train(
 
         with torch.inference_mode():
             for img, labels in val_dataloader:
-                print(f"[DEBUG] VAL")
+                # print(f"[DEBUG] VAL")
                 img, labels = img.to(device), {
                     rank: labels[rank].to(device) for rank in labels.keys()
                 }

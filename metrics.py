@@ -1,17 +1,18 @@
 import torch.nn.functional as F
 
 
+import torch.nn.functional as F
+
+
 def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty=0.1):
-    """Computes taxonomic-aware loss based on hierarchical distance."""
+    """Computes taxonomic-aware loss based on hierarchical distance, safely handling missing labels (-1)."""
     total_loss = 0
     total_distance = 0
 
-    for rank, logits in predictions.items():
-        pred_class = logits.argmax(dim=1).cpu().tolist()
-        true_class = ground_truth[rank].cpu().tolist()
-        print(
-            f"[DEBUG] Rank '{rank}' → Predicted: {pred_class}, Ground Truth: {true_class}"
-        )
+    # for rank, logits in predictions.items():
+    #     pred_class = logits.argmax(dim=1).cpu().tolist()
+    #     true_class = ground_truth[rank].cpu().tolist()
+    #     print(f"[DEBUG] Rank '{rank}' → Predicted: {pred_class}, Ground Truth: {true_class}")
 
     for rank in ["kingdom", "phylum", "class", "order", "family", "genus", "species"]:
         if rank not in predictions or rank not in ground_truth:
@@ -20,14 +21,24 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
         pred_logits = predictions[rank]
         true_label = ground_truth[rank]
 
+        # ✅ Filter valid labels (ignore entries where ground truth == -1)
+        valid_mask = true_label != -1
+        if valid_mask.sum() == 0:
+            # print(f"[WARNING] No valid labels for rank '{rank}', skipping loss calculation.")
+            continue  # ✅ Skip rank if all labels are invalid
+
+        pred_logits = pred_logits[valid_mask]
+        true_label = true_label[valid_mask]
+
         # ✅ Prevent index errors
         num_classes = pred_logits.shape[1]
         if (true_label < 0).any() or (true_label >= num_classes).any():
             print(
                 f"[ERROR] Rank '{rank}' has out-of-bounds label indices! {true_label.tolist()}"
             )
+            continue  # ✅ Skip invalid data to prevent crashes
 
-        # ✅ Standard cross-entropy loss
+        # ✅ Compute loss safely
         rank_loss = F.cross_entropy(pred_logits, true_label)
 
         # ✅ Compute hierarchical distance penalty
@@ -43,6 +54,7 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
             if taxonomic_distances
             else 0
         )
+
         total_loss += rank_loss + (distance_penalty * avg_distance)
         total_distance += avg_distance
 

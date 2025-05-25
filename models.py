@@ -73,7 +73,7 @@ class MarineClassifier(nn.Module):
         features = self.clip_model.encode_image(images)
 
         # ✅ DEBUG: Print shape of extracted features
-        print(f"[DEBUG] Extracted Features Shape: {features.shape}")
+        # print(f"[DEBUG] Extracted Features Shape: {features.shape}")
 
         # ✅ Ensure each rank always gets valid predictions
         outputs = {
