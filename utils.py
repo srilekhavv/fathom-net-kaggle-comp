@@ -72,7 +72,7 @@ class LocalMarineDataset(Dataset):
         missing_labels = set(self.annotations["label"].unique()) - set(
             self.taxonomy_tree.keys()
         )
-        print(f"[DEBUG] Missing Species Labels in taxonomy_tree: {missing_labels}")
+        # print(f"[DEBUG] Missing Species Labels in taxonomy_tree: {missing_labels}")
 
         # ✅ Collect all unique labels across taxonomy ranks
         all_labels = {
@@ -118,7 +118,7 @@ class LocalMarineDataset(Dataset):
                 print(
                     f"[ERROR] Rank '{rank}' has taxonomy labels missing from label_mapping!"
                 )
-        print(f"[DEBUG] label_mapping: {self.label_mapping}")
+        # print(f"[DEBUG] label_mapping: {self.label_mapping}")
         # ✅ Define image transformation pipeline
         self.transform = transform or transforms.Compose(
             [

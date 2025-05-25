@@ -1,9 +1,6 @@
 import torch.nn.functional as F
 
 
-import torch.nn.functional as F
-
-
 def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty=0.1):
     """Computes taxonomic-aware loss based on hierarchical distance, safely handling missing labels (-1)."""
     total_loss = 0

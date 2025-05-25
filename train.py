@@ -4,11 +4,11 @@ import numpy as np
 from pathlib import Path
 import torch.utils.tensorboard as tb
 from torch.utils.data import random_split
+from datetime import datetime
 
 from models import load_model
-from utils import load_data, get_taxonomic_tree
+from utils import load_data
 from metrics import hierarchical_loss, compute_accuracy
-from datetime import datetime
 
 
 def train(
@@ -80,18 +80,21 @@ def train(
                 "species",
             ]
         }
+        total_train_distance = 0  # ✅ Accumulate taxonomic distance
         num_train_batches = 0
 
         # ✅ Training loop
         for img, labels in train_dataloader:
-
             img, labels = img.to(device), {
                 rank: labels[rank].to(device) for rank in labels.keys()
             }
-            # print(f"[DEBUG] TRAINING: {labels}")
+
             # Forward pass
             outputs = model(img)
-            loss_val, distance_val = hierarchical_loss(outputs, labels, taxonomy_tree)
+            loss_val, batch_distance = hierarchical_loss(outputs, labels, taxonomy_tree)
+
+            # ✅ Accumulate training taxonomic distance
+            total_train_distance += batch_distance
 
             # Backward pass
             optimizer.zero_grad()
@@ -106,14 +109,20 @@ def train(
 
             num_train_batches += 1
 
-        # ✅ Normalize accuracy values
+        # ✅ Normalize accuracy and distance values
         avg_train_acc = {
             rank: (total_train_acc[rank] / num_train_batches) * 100
             for rank in total_train_acc
         }
+        avg_train_distance = (
+            total_train_distance / num_train_batches
+        )  # ✅ Compute averaged taxonomic distance
 
         # ✅ Log training metrics
         logger.add_scalar("train/loss", loss_val.item(), epoch)
+        logger.add_scalar(
+            "train/taxonomic_distance", avg_train_distance, epoch
+        )  # ✅ Log taxonomic distance
         for rank in avg_train_acc:
             logger.add_scalar(f"train/accuracy_{rank}", avg_train_acc[rank], epoch)
 
@@ -136,7 +145,6 @@ def train(
 
         with torch.inference_mode():
             for img, labels in val_dataloader:
-                # print(f"[DEBUG] VAL")
                 img, labels = img.to(device), {
                     rank: labels[rank].to(device) for rank in labels.keys()
                 }
@@ -160,16 +168,23 @@ def train(
             rank: (total_val_acc[rank] / num_val_batches) * 100
             for rank in total_val_acc
         }
+        avg_val_distance = np.mean(
+            val_distances
+        )  # ✅ Compute validation taxonomic distance
 
         # ✅ Log validation metrics
         logger.add_scalar("val/loss", np.mean(val_losses), epoch)
+        logger.add_scalar(
+            "val/taxonomic_distance", avg_val_distance, epoch
+        )  # ✅ Log taxonomic distance
         for rank in avg_val_acc:
             logger.add_scalar(f"val/accuracy_{rank}", avg_val_acc[rank], epoch)
 
         print(
             f"Epoch {epoch+1}/{num_epoch}: "
             f"train_loss={loss_val:.4f}, val_loss={np.mean(val_losses):.4f}, "
-            f"avg_taxonomic_distance={np.mean(val_distances):.4f}, "
+            f"avg_taxonomic_distance_train={avg_train_distance:.4f}, "
+            f"avg_taxonomic_distance_val={avg_val_distance:.4f}, "
             f"train_acc={avg_train_acc}, val_acc={avg_val_acc}"
         )
 
