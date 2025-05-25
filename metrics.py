@@ -1,17 +1,16 @@
 import torch.nn.functional as F
 
 
+import torch.nn.functional as F
+
+
 def hierarchical_loss(
     predictions, ground_truth, taxonomy_tree, label_mapping, distance_penalty=0.1
 ):
-    """Computes taxonomic-aware loss based on hierarchical distance, safely handling missing labels (-1)."""
+    """Computes taxonomic-aware loss with proper handling of missing labels (-1)."""
     total_loss = 0
     total_distance = 0
-
-    # for rank, logits in predictions.items():
-    #     pred_class = logits.argmax(dim=1).cpu().tolist()
-    #     true_class = ground_truth[rank].cpu().tolist()
-    #     print(f"[DEBUG] Rank '{rank}' → Predicted: {pred_class}, Ground Truth: {true_class}")
+    distances_per_image = []  # ✅ Track individual distances for debugging
 
     for rank in ["kingdom", "phylum", "class", "order", "family", "genus", "species"]:
         if rank not in predictions or rank not in ground_truth:
@@ -23,7 +22,6 @@ def hierarchical_loss(
         # ✅ Filter valid labels (ignore entries where ground truth == -1)
         valid_mask = true_label != -1
         if valid_mask.sum() == 0:
-            # print(f"[WARNING] No valid labels for rank '{rank}', skipping loss calculation.")
             continue  # ✅ Skip rank if all labels are invalid
 
         pred_logits = pred_logits[valid_mask]
@@ -47,23 +45,31 @@ def hierarchical_loss(
         taxonomic_distances = [
             compute_taxonomic_distance(true, pred, taxonomy_tree, label_mapping)
             for true, pred in zip(true_classes, pred_classes)
+            if true != -1
+            and pred != -1  # ✅ Ensure valid labels before computing distance
         ]
+
         avg_distance = (
             sum(taxonomic_distances) / len(taxonomic_distances)
             if taxonomic_distances
             else 0
         )
+        distances_per_image.extend(taxonomic_distances)  # ✅ Store per-image distances
 
         total_loss += rank_loss + (distance_penalty * avg_distance)
         total_distance += avg_distance
 
-    return total_loss / len(predictions), total_distance / len(predictions)
+    return (
+        total_loss / len(predictions),
+        total_distance / len(predictions),
+        distances_per_image,
+    )
 
 
 def compute_taxonomic_distance(
     true_label_idx, pred_label_idx, taxonomy_tree, label_mapping
 ):
-    """Finds the highest divergence point and sums all mistakes in taxonomy path."""
+    """Finds the highest divergence point and sums mistakes after divergence."""
 
     rank_order = ["kingdom", "phylum", "class", "order", "family", "genus", "species"]
 
@@ -123,9 +129,7 @@ def compute_taxonomic_distance(
         and divergence_rank
         and rank_order.index(r) > rank_order.index(divergence_rank)
     )
-
-    # print(f"distance: {true_mistakes + pred_mistakes}")
-
+    # print(f"distances: {true_mistakes + pred_mistakes}")
     return true_mistakes + pred_mistakes  # ✅ Total taxonomic error count
 
 

@@ -90,16 +90,11 @@ def train(
                 rank: labels[rank].to(device) for rank in labels.keys()
             }
 
-            # Forward pass
             outputs = model(img)
-            print(f"[DEBUG] Train Predictions vs. True Labels:")
-            print(
-                f"→ Predicted: {[outputs[rank].argmax(dim=1).cpu().tolist() for rank in outputs]}"
-            )
-            print(f"→ True Labels: {[labels[rank].cpu().tolist() for rank in labels]}")
-            loss_val, batch_distance = hierarchical_loss(
+            loss_val, batch_distance, distances_per_image = hierarchical_loss(
                 outputs, labels, taxonomy_tree, label_mapping
             )
+            # print(f"[DEBUG] Per-Image Taxonomic Distances (Train): {distances_per_image}")  # ✅ Debug distances
 
             # ✅ Accumulate training taxonomic distance
             total_train_distance += batch_distance
@@ -157,16 +152,11 @@ def train(
                     rank: labels[rank].to(device) for rank in labels.keys()
                 }
                 outputs = model(img)
-                print(f"[DEBUG] Validation Predictions vs. True Labels:")
-                print(
-                    f"→ Predicted: {[outputs[rank].argmax(dim=1).cpu().tolist() for rank in outputs]}"
-                )
-                print(
-                    f"→ True Labels: {[labels[rank].cpu().tolist() for rank in labels]}"
-                )
-                val_loss, val_distance = hierarchical_loss(
+                val_loss, val_distance, distances_per_image = hierarchical_loss(
                     outputs, labels, taxonomy_tree, label_mapping
                 )
+
+                # print(f"[DEBUG] Per-Image Taxonomic Distances (Validation): {distances_per_image}")  # ✅ Debug distances
 
                 # ✅ Compute accuracy per taxonomy rank
                 val_accuracy = compute_accuracy(outputs, labels)
