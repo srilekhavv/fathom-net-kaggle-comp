@@ -1,7 +1,9 @@
 import torch.nn.functional as F
 
 
-def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty=0.1):
+def hierarchical_loss(
+    predictions, ground_truth, taxonomy_tree, label_mapping, distance_penalty=0.1
+):
     """Computes taxonomic-aware loss based on hierarchical distance, safely handling missing labels (-1)."""
     total_loss = 0
     total_distance = 0
@@ -43,7 +45,7 @@ def hierarchical_loss(predictions, ground_truth, taxonomy_tree, distance_penalty
         true_classes = true_label.cpu().tolist()
 
         taxonomic_distances = [
-            compute_taxonomic_distance(true, pred, taxonomy_tree)
+            compute_taxonomic_distance(true, pred, taxonomy_tree, label_mapping)
             for true, pred in zip(true_classes, pred_classes)
         ]
         avg_distance = (
@@ -96,21 +98,28 @@ def compute_taxonomic_distance(
     # ✅ Find the highest point of divergence
     divergence_rank = None
     for rank in rank_order:
-        if (
-            rank in true_taxonomy
-            and rank in pred_taxonomy
-            and true_taxonomy[rank] == pred_taxonomy[rank]
-        ):
-            divergence_rank = rank
+        if rank in true_taxonomy and rank in pred_taxonomy:
+            if true_taxonomy[rank] == pred_taxonomy[rank]:  # ✅ Matching rank
+                divergence_rank = rank
+            else:
+                break  # ✅ Stop at first mismatch
         else:
-            break  # ✅ Stop at first mismatch
+            break  # ✅ Stop if one taxon is missing this rank
 
     # ✅ Count mistakes **after the divergence point**
     true_mistakes = sum(
-        1 for r in rank_order if r in true_taxonomy and r != divergence_rank
+        1
+        for r in rank_order
+        if r in true_taxonomy
+        and divergence_rank
+        and rank_order.index(r) > rank_order.index(divergence_rank)
     )
     pred_mistakes = sum(
-        1 for r in rank_order if r in pred_taxonomy and r != divergence_rank
+        1
+        for r in rank_order
+        if r in pred_taxonomy
+        and divergence_rank
+        and rank_order.index(r) > rank_order.index(divergence_rank)
     )
 
     return true_mistakes + pred_mistakes  # ✅ Total taxonomic error count
