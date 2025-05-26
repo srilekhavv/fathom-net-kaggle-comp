@@ -20,9 +20,21 @@ def test():
         ]
     )
 
+    # ✅ Load dataset first
+    full_train_dataset = load_data(
+        os.path.join("/content/fathom-net-kaggle-comp/dataset/", "train"),
+        "annotations.csv",
+        batch_size=16,
+        use_roi=True,
+    )
+
+    # ✅ Pass the same taxonomy tree to the dataset to avoid duplicate calls
+    taxonomy_tree = full_train_dataset.dataset.taxonomy_tree
+    label_mapping = full_train_dataset.dataset.label_mapping
+
     # ✅ Load trained model
-    taxonomy_tree = {}  # Load your taxonomy tree if needed
-    label_mapping = {}  # Load label mapping for decoding predictions
+    # taxonomy_tree = {}  # Load your taxonomy tree if needed
+    # label_mapping = {}  # Load label mapping for decoding predictions
     model = load_model(
         model_name="classifier", with_weights=True, taxonomy_tree=taxonomy_tree
     ).to(device)
@@ -34,9 +46,12 @@ def test():
     test_annotations = pd.read_csv(annotations_file)
 
     # ✅ Overwrite the existing "label" column with predictions
-    for idx, image_name in enumerate(test_annotations["image_name"]):
-        image_path = os.path.join(test_images_dir, image_name)
-
+    for idx, image_name in enumerate(test_annotations["path"]):
+        image_path = os.path.join(
+            test_images_dir, os.path.basename(image_name)
+        )  # Use os.path.basename to get the filename
+        print("image_path:", image_path)
+        break
         if not os.path.exists(image_path):
             print(f"[WARNING] Missing image: {image_path}")
             continue
