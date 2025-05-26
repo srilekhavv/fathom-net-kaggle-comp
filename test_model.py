@@ -44,17 +44,18 @@ def test():
     test_images_dir = "/content/fathom-net-kaggle-comp/dataset/test/rois/"
     annotations_file = "/content/fathom-net-kaggle-comp/dataset/test/annotations.csv"
     test_annotations = pd.read_csv(annotations_file)
+    test_annotations["label"] = test_annotations["label"].astype(str)
 
     # ✅ Overwrite the existing "label" column with predictions
     for idx, image_name in enumerate(test_annotations["path"]):
         image_path = os.path.join(
             test_images_dir, os.path.basename(image_name)
         )  # Use os.path.basename to get the filename
-        print("image_path:", image_path)
-        break
+        # print("image_path:", image_path)
+
         if not os.path.exists(image_path):
             print(f"[WARNING] Missing image: {image_path}")
-            continue
+            return
 
         # ✅ Open and preprocess image
         image = Image.open(image_path).convert("RGB")
@@ -79,6 +80,9 @@ def test():
 
         # ✅ Overwrite existing label with predicted name
         test_annotations.at[idx, "label"] = predicted_label
+
+    for idx, image_name in enumerate(test_annotations["path"]):
+        test_annotations.at[idx, "path"] = idx + 1
 
     # ✅ Save updated annotations file
     test_annotations.to_csv(annotations_file, index=False)
