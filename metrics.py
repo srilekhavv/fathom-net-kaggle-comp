@@ -1,9 +1,6 @@
 import torch.nn.functional as F
 
 
-import torch.nn.functional as F
-
-
 def hierarchical_loss(
     predictions, ground_truth, taxonomy_tree, label_mapping, distance_penalty=0.1
 ):
