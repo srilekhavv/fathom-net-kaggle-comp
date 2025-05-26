@@ -2,7 +2,7 @@ import torch.nn.functional as F
 
 
 def hierarchical_loss(
-    predictions, ground_truth, taxonomy_tree, label_mapping, distance_penalty=0.1
+    predictions, ground_truth, taxonomy_tree, label_mapping, distance_penalty=0.3
 ):
     """Computes taxonomic-aware loss with proper handling of missing labels (-1)."""
     total_loss = 0

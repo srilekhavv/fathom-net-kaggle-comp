@@ -6,7 +6,7 @@ import torch.utils.tensorboard as tb
 from torch.utils.data import random_split
 from datetime import datetime
 
-from models import load_model
+from models import load_model, save_model
 from utils import load_data
 from metrics import hierarchical_loss, compute_accuracy
 
@@ -192,7 +192,7 @@ def train(
             f"avg_taxonomic_distance_val={avg_val_distance:.4f}, "
             f"train_acc={avg_train_acc}, val_acc={avg_val_acc}"
         )
-
+    save_model(model)
     # Save model
     torch.save(model.state_dict(), log_dir / f"{model_name}.pth")
     print(f"Model saved to {log_dir / f'{model_name}.pth'}")

@@ -131,69 +131,29 @@ def save_model(model):
     raise ValueError(f"Unsupported model type: {type(model)}")
 
 
-# def load_model(model_name: str, with_weights: bool = False, **model_kwargs):
-#     """Load a pre-trained model."""
-#     if model_name not in model_factory:
-#         raise ValueError(f"Model '{model_name}' not found in factory")
-
-#     model = model_factory[model_name](**model_kwargs)
-
-#     if with_weights:
-#         model_path = Path(__file__).resolve().parent / f"{model_name}.pth"
-#         print(f"model_path: {model_path}")
-#         if not model_path.exists():
-#             raise FileNotFoundError(f"Pretrained model '{model_name}.pth' not found")
-
-#         try:
-#             model.load_state_dict(torch.load(model_path, map_location="cpu"))
-#             print(f"Loaded weights from {model_path}")
-#         except RuntimeError as e:
-#             raise RuntimeError(
-#                 f"Failed to load {model_path}. Check model arguments."
-#             ) from e
-
-#     # ✅ Print model size constraint but remove unnecessary check
-#     model_size_mb = calculate_model_size_mb(model)
-#     print(f"Model size: {model_size_mb:.2f} MB")
-
-#     return model
-
-# import torch
-# from pathlib import Path
-
-
-def load_model(
-    model_name: str, with_weights: bool = False, logs_dir: str = "logs", **model_kwargs
-):
-    """Load a pre-trained model from the logs directory with flexible weight loading."""
+def load_model(model_name: str, with_weights: bool = False, **model_kwargs):
+    """Load a pre-trained model."""
     if model_name not in model_factory:
         raise ValueError(f"Model '{model_name}' not found in factory")
 
     model = model_factory[model_name](**model_kwargs)
 
     if with_weights:
-        logs_path = Path(logs_dir)
-        model_paths = sorted(
-            logs_path.glob(f"{model_name}_*/{model_name}.pth"), reverse=True
-        )
-
-        if not model_paths:
-            raise FileNotFoundError(
-                f"No saved models found for '{model_name}' in {logs_dir}"
-            )
-
-        model_path = model_paths[0]  # ✅ Load the most recent model
-        print(f"[INFO] Loading model from: {model_path}")
+        model_path = Path(__file__).resolve().parent / f"{model_name}.pth"
+        print(f"model_path: {model_path}")
+        if not model_path.exists():
+            raise FileNotFoundError(f"Pretrained model '{model_name}.pth' not found")
 
         try:
-            state_dict = torch.load(model_path, map_location="cpu")
-            model.load_state_dict(
-                state_dict, strict=False
-            )  # ✅ Allow non-matching layers
-            print("[INFO] Loaded model with non-strict mode (ignoring size mismatches)")
+            model.load_state_dict(torch.load(model_path, map_location="cpu"))
+            print(f"Loaded weights from {model_path}")
         except RuntimeError as e:
             raise RuntimeError(
                 f"Failed to load {model_path}. Check model arguments."
             ) from e
+
+    # ✅ Print model size constraint but remove unnecessary check
+    model_size_mb = calculate_model_size_mb(model)
+    print(f"Model size: {model_size_mb:.2f} MB")
 
     return model
